@@ -1,22 +1,51 @@
-# CloudFormation Parameters Configuration
-# Copy this file to parameters-dev.json, parameters-qa.json, or parameters-prod.json
-# and customize for each environment
+# CloudFormation Parameters Configuration - EXAMPLE
+# 
+# INSTRUCTIONS:
+# 1. Copy this file to parameters-{environment}.json (e.g., parameters-dev.json)
+# 2. Customize values for your specific environment
+# 3. Create the S3 buckets before deploying (they must exist):
+#    - S3BucketTemplates: For nested stack templates
+#    - BackendCodeBucket: For Lambda deployment packages
+# 4. Never commit actual parameters files to git (add to .gitignore)
+#
+# ENVIRONMENTS:
+# - dev: Development environment (smaller resources, frequent updates)
+# - qa: QA/Staging environment (production-like for testing)
+# - prod: Production environment (optimized for performance and cost)
+#
+# DEPLOYMENT COMMAND:
+# aws cloudformation create-stack \
+#   --stack-name chat-booking-{environment} \
+#   --template-body file://master-stack.yaml \
+#   --parameters file://parameters-{environment}.json \
+#   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+#   --region us-east-1
 
 [
   {
     "ParameterKey": "Environment",
-    "ParameterValue": "dev"
+    "ParameterValue": "dev",
+    "Description": "Environment name (dev|qa|prod)"
   },
   {
     "ParameterKey": "ProjectName",
-    "ParameterValue": "ChatBooking"
+    "ParameterValue": "ChatBooking",
+    "Description": "Project name used for resource naming and tagging"
   },
   {
     "ParameterKey": "S3BucketTemplates",
-    "ParameterValue": "ChatBooking-cloudformation-templates-dev"
+    "ParameterValue": "chat-booking-cfn-templates-dev",
+    "Description": "S3 bucket containing nested CloudFormation templates (must exist before deployment)"
   },
   {
     "ParameterKey": "BackendCodeBucket",
-    "ParameterValue": "ChatBooking-lambda-packages-dev"
+    "ParameterValue": "chat-booking-lambda-code-dev",
+    "Description": "S3 bucket containing Lambda deployment packages (must exist before deployment)"
   }
 ]
+
+# NOTES:
+# - S3 bucket names must be globally unique across AWS
+# - Bucket naming convention: {project}-{purpose}-{environment}
+# - Both buckets should be in the same region as the stack
+# - Consider enabling versioning on BackendCodeBucket for rollback capability

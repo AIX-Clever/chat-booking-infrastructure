@@ -30,6 +30,11 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# CloudFormation parameters with real values
+cloudformation/parameters-dev.json
+cloudformation/parameters-qa.json
+cloudformation/parameters-prod.json
+
 # Testing
 coverage/
 .nyc_output/
