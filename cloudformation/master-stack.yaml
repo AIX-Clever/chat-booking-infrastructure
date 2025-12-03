@@ -1,0 +1,226 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Chat Booking SaaS - Master Stack with Nested Stacks'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: ChatBooking
+    Description: Project name used for resource naming
+
+  S3BucketTemplates:
+    Type: String
+    Description: S3 bucket containing nested stack templates
+    Default: chat-booking-cloudformation-templates
+
+  BackendCodeBucket:
+    Type: String
+    Description: S3 bucket containing Lambda code packages
+    Default: chat-booking-lambda-packages
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment Configuration
+        Parameters:
+          - Environment
+          - ProjectName
+      - Label:
+          default: Deployment Resources
+        Parameters:
+          - S3BucketTemplates
+          - BackendCodeBucket
+
+Resources:
+  # ========================================
+  # Nested Stack 1: Database (DynamoDB)
+  # ========================================
+  DatabaseStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${S3BucketTemplates}.s3.${AWS::Region}.amazonaws.com/nested-stacks/database-stack.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        ProjectName: !Ref ProjectName
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # Nested Stack 2: Auth (Cognito)
+  # ========================================
+  AuthStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${S3BucketTemplates}.s3.${AWS::Region}.amazonaws.com/nested-stacks/auth-stack.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        ProjectName: !Ref ProjectName
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # Nested Stack 3: Lambda Functions
+  # ========================================
+  LambdaStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: DatabaseStack
+    Properties:
+      TemplateURL: !Sub 'https://${S3BucketTemplates}.s3.${AWS::Region}.amazonaws.com/nested-stacks/lambda-stack.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        ProjectName: !Ref ProjectName
+        BackendCodeBucket: !Ref BackendCodeBucket
+        # Pass table names from Database stack
+        TenantsTableName: !GetAtt DatabaseStack.Outputs.TenantsTableName
+        TenantsTableArn: !GetAtt DatabaseStack.Outputs.TenantsTableArn
+        ApiKeysTableName: !GetAtt DatabaseStack.Outputs.ApiKeysTableName
+        ApiKeysTableArn: !GetAtt DatabaseStack.Outputs.ApiKeysTableArn
+        ServicesTableName: !GetAtt DatabaseStack.Outputs.ServicesTableName
+        ServicesTableArn: !GetAtt DatabaseStack.Outputs.ServicesTableArn
+        ProvidersTableName: !GetAtt DatabaseStack.Outputs.ProvidersTableName
+        ProvidersTableArn: !GetAtt DatabaseStack.Outputs.ProvidersTableArn
+        AvailabilityTableName: !GetAtt DatabaseStack.Outputs.AvailabilityTableName
+        AvailabilityTableArn: !GetAtt DatabaseStack.Outputs.AvailabilityTableArn
+        BookingsTableName: !GetAtt DatabaseStack.Outputs.BookingsTableName
+        BookingsTableArn: !GetAtt DatabaseStack.Outputs.BookingsTableArn
+        ConversationsTableName: !GetAtt DatabaseStack.Outputs.ConversationsTableName
+        ConversationsTableArn: !GetAtt DatabaseStack.Outputs.ConversationsTableArn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # Nested Stack 4: AppSync API
+  # ========================================
+  AppSyncApiStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - LambdaStack
+      - AuthStack
+    Properties:
+      TemplateURL: !Sub 'https://${S3BucketTemplates}.s3.${AWS::Region}.amazonaws.com/nested-stacks/appsync-api-stack.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        ProjectName: !Ref ProjectName
+        # Pass Lambda ARNs from Lambda stack
+        AuthResolverFunctionArn: !GetAtt LambdaStack.Outputs.AuthResolverFunctionArn
+        CatalogFunctionArn: !GetAtt LambdaStack.Outputs.CatalogFunctionArn
+        AvailabilityFunctionArn: !GetAtt LambdaStack.Outputs.AvailabilityFunctionArn
+        BookingFunctionArn: !GetAtt LambdaStack.Outputs.BookingFunctionArn
+        ChatAgentFunctionArn: !GetAtt LambdaStack.Outputs.ChatAgentFunctionArn
+        # Pass Cognito User Pool from Auth stack
+        UserPoolId: !GetAtt AuthStack.Outputs.UserPoolId
+        UserPoolArn: !GetAtt AuthStack.Outputs.UserPoolArn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # Nested Stack 5: Monitoring & Alarms
+  # ========================================
+  MonitoringStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - LambdaStack
+      - AppSyncApiStack
+    Properties:
+      TemplateURL: !Sub 'https://${S3BucketTemplates}.s3.${AWS::Region}.amazonaws.com/nested-stacks/monitoring-stack.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        ProjectName: !Ref ProjectName
+        # Pass resource names for monitoring
+        AuthResolverFunctionName: !GetAtt LambdaStack.Outputs.AuthResolverFunctionName
+        CatalogFunctionName: !GetAtt LambdaStack.Outputs.CatalogFunctionName
+        AvailabilityFunctionName: !GetAtt LambdaStack.Outputs.AvailabilityFunctionName
+        BookingFunctionName: !GetAtt LambdaStack.Outputs.BookingFunctionName
+        ChatAgentFunctionName: !GetAtt LambdaStack.Outputs.ChatAgentFunctionName
+        AppSyncApiId: !GetAtt AppSyncApiStack.Outputs.AppSyncApiId
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+Outputs:
+  # Database Outputs
+  TenantsTableName:
+    Description: DynamoDB Tenants table name
+    Value: !GetAtt DatabaseStack.Outputs.TenantsTableName
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-TenantsTable'
+
+  # Auth Outputs
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !GetAtt AuthStack.Outputs.UserPoolId
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-UserPoolId'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !GetAtt AuthStack.Outputs.UserPoolClientId
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-UserPoolClientId'
+
+  # AppSync Outputs
+  GraphQLApiUrl:
+    Description: AppSync GraphQL API URL
+    Value: !GetAtt AppSyncApiStack.Outputs.GraphQLApiUrl
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-GraphQLApiUrl'
+
+  GraphQLApiId:
+    Description: AppSync GraphQL API ID
+    Value: !GetAtt AppSyncApiStack.Outputs.AppSyncApiId
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-GraphQLApiId'
+
+  GraphQLApiKey:
+    Description: AppSync API Key (for testing)
+    Value: !GetAtt AppSyncApiStack.Outputs.GraphQLApiKey
+
+  # Lambda Outputs
+  ChatAgentFunctionArn:
+    Description: Chat Agent Lambda ARN
+    Value: !GetAtt LambdaStack.Outputs.ChatAgentFunctionArn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ChatAgentFunctionArn'
+
+  # Deployment Summary
+  DeploymentSummary:
+    Description: Deployment information
+    Value: !Sub |
+      Environment: ${Environment}
+      Region: ${AWS::Region}
+      GraphQL Endpoint: ${AppSyncApiStack.Outputs.GraphQLApiUrl}
+      User Pool ID: ${AuthStack.Outputs.UserPoolId}
+      Stack Name: ${AWS::StackName}

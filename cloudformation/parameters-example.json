@@ -1,0 +1,22 @@
+# CloudFormation Parameters Configuration
+# Copy this file to parameters-dev.json, parameters-qa.json, or parameters-prod.json
+# and customize for each environment
+
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "ChatBooking"
+  },
+  {
+    "ParameterKey": "S3BucketTemplates",
+    "ParameterValue": "ChatBooking-cloudformation-templates-dev"
+  },
+  {
+    "ParameterKey": "BackendCodeBucket",
+    "ParameterValue": "ChatBooking-lambda-packages-dev"
+  }
+]

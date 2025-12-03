@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Chat Booking SaaS - Auth Stack (Cognito User Pool)'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Description: Project name
+
+Resources:
+  # ========================================
+  # Cognito User Pool
+  # ========================================
+  AdminUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${ProjectName}-${Environment}-AdminUsers'
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+        - Name: name
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+        - Name: tenantId
+          AttributeDataType: String
+          Mutable: false
+          Required: false
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          TemporaryPasswordValidityDays: 7
+      MfaConfiguration: OPTIONAL
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      UserPoolAddOns:
+        AdvancedSecurityMode: ENFORCED
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+      UserPoolTags:
+        Name: !Sub '${ProjectName}-${Environment}-AdminUserPool'
+        Environment: !Ref Environment
+        Project: !Ref ProjectName
+        ManagedBy: CloudFormation
+
+  # ========================================
+  # User Pool Domain
+  # ========================================
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub '${ProjectName}-${Environment}-admin-${AWS::AccountId}'
+      UserPoolId: !Ref AdminUserPool
+
+  # ========================================
+  # User Pool Client (Web App)
+  # ========================================
+  AdminWebClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${ProjectName}-${Environment}-AdminWeb'
+      UserPoolId: !Ref AdminUserPool
+      GenerateSecret: false
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        RefreshToken: days
+        AccessToken: minutes
+        IdToken: minutes
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      CallbackURLs:
+        - http://localhost:3000/auth/callback
+        - !Sub 'https://admin-${Environment}.chatbooking.com/auth/callback'
+      LogoutURLs:
+        - http://localhost:3000
+        - !Sub 'https://admin-${Environment}.chatbooking.com'
+      AllowedOAuthFlowsUserPoolClient: true
+      PreventUserExistenceErrors: ENABLED
+      SupportedIdentityProviders:
+        - COGNITO
+
+  # ========================================
+  # User Groups
+  # ========================================
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      Description: Administrators with full access
+      UserPoolId: !Ref AdminUserPool
+      Precedence: 1
+
+  StaffGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: staff
+      Description: Staff with limited access
+      UserPoolId: !Ref AdminUserPool
+      Precedence: 2
+
+  ViewerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: viewer
+      Description: Viewers with read-only access
+      UserPoolId: !Ref AdminUserPool
+      Precedence: 3
+
+Outputs:
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref AdminUserPool
+
+  UserPoolArn:
+    Description: Cognito User Pool ARN
+    Value: !GetAtt AdminUserPool.Arn
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref AdminWebClient
+
+  UserPoolDomain:
+    Description: Cognito User Pool Domain
+    Value: !Ref UserPoolDomain
+
+  UserPoolLoginUrl:
+    Description: Cognito Hosted UI Login URL
+    Value: !Sub 'https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${AdminWebClient}&response_type=code&redirect_uri=http://localhost:3000/auth/callback'
+
+  AdminGroupName:
+    Description: Admin group name
+    Value: !Ref AdminGroup
+
+  StaffGroupName:
+    Description: Staff group name
+    Value: !Ref StaffGroup
+
+  ViewerGroupName:
+    Description: Viewer group name
+    Value: !Ref ViewerGroup

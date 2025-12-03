@@ -1,0 +1,389 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Chat Booking SaaS - Monitoring Stack (CloudWatch Dashboard and Alarms)'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Description: Project name
+
+  # Lambda Function Names
+  AuthResolverFunctionName:
+    Type: String
+  CatalogFunctionName:
+    Type: String
+  AvailabilityFunctionName:
+    Type: String
+  BookingFunctionName:
+    Type: String
+  ChatAgentFunctionName:
+    Type: String
+
+  # AppSync API ID
+  AppSyncApiId:
+    Type: String
+
+  # Optional: SNS Topic for Alarms
+  AlarmNotificationEmail:
+    Type: String
+    Default: ''
+    Description: Email address for alarm notifications (optional)
+
+Conditions:
+  CreateSNSTopic: !Not [!Equals [!Ref AlarmNotificationEmail, '']]
+
+Resources:
+  # ========================================
+  # SNS Topic for Alarm Notifications
+  # ========================================
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: CreateSNSTopic
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-Alarms'
+      DisplayName: Chat Booking Alarms
+      Subscription:
+        - Endpoint: !Ref AlarmNotificationEmail
+          Protocol: email
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-AlarmTopic'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # CloudWatch Dashboard
+  # ========================================
+  MonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-${Environment}-Dashboard'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", {"stat": "Sum", "label": "Auth Resolver"}],
+                  ["...", {"stat": "Sum", "label": "Catalog"}],
+                  ["...", {"stat": "Sum", "label": "Availability"}],
+                  ["...", {"stat": "Sum", "label": "Booking"}],
+                  ["...", {"stat": "Sum", "label": "Chat Agent"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Invocations",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Errors", {"stat": "Sum"}],
+                  [".", "Throttles", {"stat": "Sum"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Errors & Throttles",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Duration", {"stat": "Average", "label": "Avg Duration"}],
+                  ["...", {"stat": "p99", "label": "P99 Duration"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Duration",
+                "period": 300,
+                "yAxis": {
+                  "left": {
+                    "label": "Milliseconds"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/AppSync", "4XXError", {"stat": "Sum"}],
+                  [".", "5XXError", {"stat": "Sum"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "AppSync Errors",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/AppSync", "Latency", {"stat": "Average", "label": "Avg Latency"}],
+                  ["...", {"stat": "p99", "label": "P99 Latency"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "AppSync Latency",
+                "period": 300,
+                "yAxis": {
+                  "left": {
+                    "label": "Milliseconds"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/DynamoDB", "ConsumedReadCapacityUnits", {"stat": "Sum"}],
+                  [".", "ConsumedWriteCapacityUnits", {"stat": "Sum"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "DynamoDB Capacity",
+                "period": 300
+              }
+            },
+            {
+              "type": "log",
+              "properties": {
+                "query": "SOURCE '/aws/lambda/${AuthResolverFunctionName}'\n| SOURCE '/aws/lambda/${CatalogFunctionName}'\n| SOURCE '/aws/lambda/${AvailabilityFunctionName}'\n| SOURCE '/aws/lambda/${BookingFunctionName}'\n| SOURCE '/aws/lambda/${ChatAgentFunctionName}'\n| fields @timestamp, @message\n| filter @message like /ERROR/\n| sort @timestamp desc\n| limit 20",
+                "region": "${AWS::Region}",
+                "title": "Recent Errors (Lambdas)",
+                "stacked": false
+              }
+            }
+          ]
+        }
+
+  # ========================================
+  # Lambda Error Rate Alarms
+  # ========================================
+  AuthResolverErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-AuthResolver-ErrorRate'
+      AlarmDescription: Auth Resolver error rate is high
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AuthResolverFunctionName
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - CreateSNSTopic
+        - [!Ref AlarmTopic]
+        - !Ref AWS::NoValue
+
+  BookingErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-Booking-ErrorRate'
+      AlarmDescription: Booking function error rate is high
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BookingFunctionName
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - CreateSNSTopic
+        - [!Ref AlarmTopic]
+        - !Ref AWS::NoValue
+
+  ChatAgentErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-ChatAgent-ErrorRate'
+      AlarmDescription: Chat Agent error rate is high
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ChatAgentFunctionName
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - CreateSNSTopic
+        - [!Ref AlarmTopic]
+        - !Ref AWS::NoValue
+
+  # ========================================
+  # Lambda Duration Alarms (P99)
+  # ========================================
+  BookingDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-Booking-Duration'
+      AlarmDescription: Booking function P99 duration is high
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: p99
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 50000  # 50 seconds (80% of 60s timeout)
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BookingFunctionName
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - CreateSNSTopic
+        - [!Ref AlarmTopic]
+        - !Ref AWS::NoValue
+
+  ChatAgentDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-ChatAgent-Duration'
+      AlarmDescription: Chat Agent P99 duration is high
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: p99
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 50000  # 50 seconds
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ChatAgentFunctionName
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - CreateSNSTopic
+        - [!Ref AlarmTopic]
+        - !Ref AWS::NoValue
+
+  # ========================================
+  # AppSync Alarms
+  # ========================================
+  AppSync4xxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-AppSync-4xxErrors'
+      AlarmDescription: AppSync 4xx error rate is high
+      MetricName: 4XXError
+      Namespace: AWS/AppSync
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: GraphQLAPIId
+          Value: !Ref AppSyncApiId
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - CreateSNSTopic
+        - [!Ref AlarmTopic]
+        - !Ref AWS::NoValue
+
+  AppSync5xxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-AppSync-5xxErrors'
+      AlarmDescription: AppSync 5xx error rate is high
+      MetricName: 5XXError
+      Namespace: AWS/AppSync
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: GraphQLAPIId
+          Value: !Ref AppSyncApiId
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - CreateSNSTopic
+        - [!Ref AlarmTopic]
+        - !Ref AWS::NoValue
+
+  AppSyncLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-AppSync-Latency'
+      AlarmDescription: AppSync P99 latency is high
+      MetricName: Latency
+      Namespace: AWS/AppSync
+      Statistic: p99
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5000  # 5 seconds
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: GraphQLAPIId
+          Value: !Ref AppSyncApiId
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - CreateSNSTopic
+        - [!Ref AlarmTopic]
+        - !Ref AWS::NoValue
+
+  # ========================================
+  # Composite Alarm (Overall Health)
+  # ========================================
+  SystemHealthAlarm:
+    Type: AWS::CloudWatch::CompositeAlarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-SystemHealth'
+      AlarmDescription: Overall system health - triggers if multiple alarms fire
+      AlarmRule: !Sub |
+        ALARM(${BookingErrorRateAlarm}) OR
+        ALARM(${ChatAgentErrorRateAlarm}) OR
+        ALARM(${AppSync5xxErrorAlarm})
+      ActionsEnabled: true
+      AlarmActions: !If
+        - CreateSNSTopic
+        - [!Ref AlarmTopic]
+        - !Ref AWS::NoValue
+
+Outputs:
+  DashboardURL:
+    Description: CloudWatch Dashboard URL
+    Value: !Sub 'https://console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${MonitoringDashboard}'
+
+  AlarmTopicArn:
+    Description: SNS Topic ARN for alarms
+    Value: !If
+      - CreateSNSTopic
+      - !Ref AlarmTopic
+      - 'No SNS topic created'
+
+  SystemHealthAlarmName:
+    Description: Composite alarm for overall system health
+    Value: !Ref SystemHealthAlarm

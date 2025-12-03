@@ -1,0 +1,521 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Chat Booking SaaS - AppSync API Stack (GraphQL API)'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Description: Project name
+
+  # Lambda Function ARNs
+  AuthResolverFunctionArn:
+    Type: String
+  CatalogFunctionArn:
+    Type: String
+  AvailabilityFunctionArn:
+    Type: String
+  BookingFunctionArn:
+    Type: String
+  ChatAgentFunctionArn:
+    Type: String
+
+  # Cognito
+  UserPoolId:
+    Type: String
+  UserPoolArn:
+    Type: String
+
+Resources:
+  # ========================================
+  # AppSync API
+  # ========================================
+  GraphQLApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-API'
+      AuthenticationType: API_KEY
+      AdditionalAuthenticationProviders:
+        - AuthenticationType: AWS_LAMBDA
+          LambdaAuthorizerConfig:
+            AuthorizerUri: !Ref AuthResolverFunctionArn
+            AuthorizerResultTtlInSeconds: 300
+        - AuthenticationType: AMAZON_COGNITO_USER_POOLS
+          UserPoolConfig:
+            UserPoolId: !Ref UserPoolId
+            AwsRegion: !Ref AWS::Region
+      XrayEnabled: true
+      LogConfig:
+        CloudWatchLogsRoleArn: !GetAtt AppSyncLogsRole.Arn
+        FieldLogLevel: ERROR
+        ExcludeVerboseContent: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-GraphQLApi'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # API Key
+  # ========================================
+  ApiKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      Description: API Key for widget authentication
+      Expires: !Sub
+        - '${ExpirationTime}'
+        - ExpirationTime: !GetAtt ExpirationTimeFunction.Value
+
+  # Custom resource to calculate expiration time (1 year from now)
+  ExpirationTimeFunction:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt ExpirationCalculator.Arn
+
+  ExpirationCalculator:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt ExpirationCalculatorRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import cfnresponse
+          from datetime import datetime, timedelta
+          
+          def handler(event, context):
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      # 1 year from now in epoch seconds
+                      expiration = int((datetime.utcnow() + timedelta(days=365)).timestamp())
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Value': str(expiration)})
+                  else:
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  ExpirationCalculatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # ========================================
+  # GraphQL Schema
+  # ========================================
+  GraphQLSchema:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      Definition: |
+        scalar AWSDateTime
+        scalar AWSJSON
+        
+        enum BookingStatus {
+          PENDING
+          CONFIRMED
+          CANCELLED
+          NO_SHOW
+        }
+        
+        enum PaymentStatus {
+          NONE
+          PENDING
+          PAID
+          FAILED
+        }
+        
+        enum ConversationState {
+          INIT
+          SERVICE_PENDING
+          SERVICE_SELECTED
+          PROVIDER_PENDING
+          PROVIDER_SELECTED
+          SLOT_PENDING
+          CONFIRM_PENDING
+          BOOKING_CONFIRMED
+        }
+        
+        type Service {
+          serviceId: ID!
+          name: String!
+          description: String
+          category: String!
+          durationMinutes: Int!
+          price: Float
+          available: Boolean!
+        }
+        
+        type Provider {
+          providerId: ID!
+          name: String!
+          bio: String
+          serviceIds: [ID!]!
+          timezone: String!
+          available: Boolean!
+        }
+        
+        type TimeSlot {
+          providerId: ID!
+          serviceId: ID!
+          start: AWSDateTime!
+          end: AWSDateTime!
+          isAvailable: Boolean!
+        }
+        
+        type TimeRange {
+          startTime: String!
+          endTime: String!
+        }
+        
+        type ProviderAvailability {
+          providerId: ID!
+          dayOfWeek: String!
+          timeRanges: [TimeRange!]!
+          breaks: [TimeRange!]
+        }
+        
+        type Booking {
+          bookingId: ID!
+          tenantId: ID!
+          serviceId: ID!
+          providerId: ID!
+          start: AWSDateTime!
+          end: AWSDateTime!
+          status: BookingStatus!
+          clientName: String!
+          clientEmail: String!
+          clientPhone: String
+          notes: String
+          conversationId: ID
+          paymentStatus: PaymentStatus!
+          totalAmount: Float!
+          createdAt: AWSDateTime!
+          updatedAt: AWSDateTime!
+        }
+        
+        type Message {
+          role: String!
+          content: String!
+          type: String!
+          timestamp: String!
+        }
+        
+        type Conversation {
+          conversationId: ID!
+          tenantId: ID!
+          state: ConversationState!
+          context: AWSJSON
+          messages: [Message!]!
+          channel: String!
+          metadata: AWSJSON
+          createdAt: AWSDateTime!
+          updatedAt: AWSDateTime!
+        }
+        
+        type ChatResponse {
+          conversation: Conversation!
+          response: AWSJSON!
+        }
+        
+        input CreateServiceInput {
+          name: String!
+          description: String
+          category: String!
+          durationMinutes: Int!
+          price: Float
+        }
+        
+        input UpdateServiceInput {
+          serviceId: ID!
+          name: String
+          description: String
+          category: String
+          durationMinutes: Int
+          price: Float
+          available: Boolean
+        }
+        
+        input CreateProviderInput {
+          name: String!
+          bio: String
+          serviceIds: [ID!]!
+          timezone: String!
+        }
+        
+        input UpdateProviderInput {
+          providerId: ID!
+          name: String
+          bio: String
+          serviceIds: [ID!]
+          timezone: String
+          available: Boolean
+        }
+        
+        input GetAvailableSlotsInput {
+          serviceId: ID!
+          providerId: ID!
+          from: AWSDateTime!
+          to: AWSDateTime!
+        }
+        
+        input TimeRangeInput {
+          startTime: String!
+          endTime: String!
+        }
+        
+        input SetAvailabilityInput {
+          providerId: ID!
+          dayOfWeek: String!
+          timeRanges: [TimeRangeInput!]!
+          breaks: [TimeRangeInput!]
+        }
+        
+        input CreateBookingInput {
+          serviceId: ID!
+          providerId: ID!
+          start: AWSDateTime!
+          end: AWSDateTime!
+          clientName: String!
+          clientEmail: String!
+          clientPhone: String
+          notes: String
+          conversationId: ID
+        }
+        
+        input ConfirmBookingInput {
+          bookingId: ID!
+        }
+        
+        input CancelBookingInput {
+          bookingId: ID!
+          reason: String
+        }
+        
+        input GetBookingInput {
+          bookingId: ID!
+        }
+        
+        input ListBookingsByProviderInput {
+          providerId: ID!
+          startDate: AWSDateTime!
+          endDate: AWSDateTime!
+        }
+        
+        input ListBookingsByClientInput {
+          clientEmail: String!
+        }
+        
+        input GetBookingByConversationInput {
+          conversationId: ID!
+        }
+        
+        input StartConversationInput {
+          channel: String
+          metadata: AWSJSON
+        }
+        
+        input SendMessageInput {
+          conversationId: ID!
+          message: String!
+          messageType: String
+          userData: AWSJSON
+        }
+        
+        input ConfirmBookingFromConversationInput {
+          conversationId: ID!
+        }
+        
+        input GetConversationInput {
+          conversationId: ID!
+        }
+        
+        type Query {
+          searchServices(text: String, availableOnly: Boolean): [Service!]!
+          getService(serviceId: ID!): Service
+          listProviders: [Provider!]!
+          listProvidersByService(serviceId: ID!): [Provider!]!
+          getAvailableSlots(input: GetAvailableSlotsInput!): [TimeSlot!]!
+          getBooking(input: GetBookingInput!): Booking
+          listBookingsByProvider(input: ListBookingsByProviderInput!): [Booking!]!
+          listBookingsByClient(input: ListBookingsByClientInput!): [Booking!]!
+          getBookingByConversation(input: GetBookingByConversationInput!): Booking
+          getConversation(input: GetConversationInput!): Conversation
+        }
+        
+        type Mutation {
+          createService(input: CreateServiceInput!): Service!
+          updateService(input: UpdateServiceInput!): Service!
+          deleteService(serviceId: ID!): Service!
+          createProvider(input: CreateProviderInput!): Provider!
+          updateProvider(input: UpdateProviderInput!): Provider!
+          deleteProvider(providerId: ID!): Provider!
+          setProviderAvailability(input: SetAvailabilityInput!): ProviderAvailability!
+          createBooking(input: CreateBookingInput!): Booking!
+          confirmBooking(input: ConfirmBookingInput!): Booking!
+          cancelBooking(input: CancelBookingInput!): Booking!
+          startConversation(input: StartConversationInput!): ChatResponse!
+          sendMessage(input: SendMessageInput!): ChatResponse!
+          confirmBookingFromConversation(input: ConfirmBookingFromConversationInput!): ChatResponse!
+        }
+        
+        schema {
+          query: Query
+          mutation: Mutation
+        }
+
+  # ========================================
+  # IAM Role for AppSync Logs
+  # ========================================
+  AppSyncLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: appsync.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppSyncPushToCloudWatchLogs
+
+  # ========================================
+  # Data Sources
+  # ========================================
+  CatalogDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      Name: CatalogDataSource
+      Type: AWS_LAMBDA
+      ServiceRoleArn: !GetAtt AppSyncLambdaRole.Arn
+      LambdaConfig:
+        LambdaFunctionArn: !Ref CatalogFunctionArn
+
+  AvailabilityDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      Name: AvailabilityDataSource
+      Type: AWS_LAMBDA
+      ServiceRoleArn: !GetAtt AppSyncLambdaRole.Arn
+      LambdaConfig:
+        LambdaFunctionArn: !Ref AvailabilityFunctionArn
+
+  BookingDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      Name: BookingDataSource
+      Type: AWS_LAMBDA
+      ServiceRoleArn: !GetAtt AppSyncLambdaRole.Arn
+      LambdaConfig:
+        LambdaFunctionArn: !Ref BookingFunctionArn
+
+  ChatAgentDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      Name: ChatAgentDataSource
+      Type: AWS_LAMBDA
+      ServiceRoleArn: !GetAtt AppSyncLambdaRole.Arn
+      LambdaConfig:
+        LambdaFunctionArn: !Ref ChatAgentFunctionArn
+
+  # ========================================
+  # IAM Role for Lambda Invocation
+  # ========================================
+  AppSyncLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: appsync.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !Ref CatalogFunctionArn
+                  - !Ref AvailabilityFunctionArn
+                  - !Ref BookingFunctionArn
+                  - !Ref ChatAgentFunctionArn
+
+  # ========================================
+  # Resolvers (Sample - create all needed)
+  # ========================================
+  SearchServicesResolver:
+    Type: AWS::AppSync::Resolver
+    DependsOn: GraphQLSchema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: Query
+      FieldName: searchServices
+      DataSourceName: !GetAtt CatalogDataSource.Name
+      Kind: UNIT
+
+  SendMessageResolver:
+    Type: AWS::AppSync::Resolver
+    DependsOn: GraphQLSchema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: Mutation
+      FieldName: sendMessage
+      DataSourceName: !GetAtt ChatAgentDataSource.Name
+      Kind: UNIT
+
+  CreateBookingResolver:
+    Type: AWS::AppSync::Resolver
+    DependsOn: GraphQLSchema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: Mutation
+      FieldName: createBooking
+      DataSourceName: !GetAtt BookingDataSource.Name
+      Kind: UNIT
+
+  GetAvailableSlotsResolver:
+    Type: AWS::AppSync::Resolver
+    DependsOn: GraphQLSchema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: Query
+      FieldName: getAvailableSlots
+      DataSourceName: !GetAtt AvailabilityDataSource.Name
+      Kind: UNIT
+
+Outputs:
+  AppSyncApiId:
+    Description: AppSync API ID
+    Value: !GetAtt GraphQLApi.ApiId
+
+  GraphQLApiUrl:
+    Description: GraphQL API endpoint
+    Value: !GetAtt GraphQLApi.GraphQLUrl
+
+  GraphQLApiKey:
+    Description: API Key for testing
+    Value: !GetAtt ApiKey.ApiKey

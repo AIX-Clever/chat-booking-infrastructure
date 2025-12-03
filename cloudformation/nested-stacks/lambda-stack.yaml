@@ -1,0 +1,435 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Chat Booking SaaS - Lambda Stack (Functions and Layers)'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Description: Project name
+
+  BackendCodeBucket:
+    Type: String
+    Description: S3 bucket containing Lambda code packages
+
+  # DynamoDB Table Parameters
+  TenantsTableName:
+    Type: String
+  TenantsTableArn:
+    Type: String
+  ApiKeysTableName:
+    Type: String
+  ApiKeysTableArn:
+    Type: String
+  ServicesTableName:
+    Type: String
+  ServicesTableArn:
+    Type: String
+  ProvidersTableName:
+    Type: String
+  ProvidersTableArn:
+    Type: String
+  AvailabilityTableName:
+    Type: String
+  AvailabilityTableArn:
+    Type: String
+  BookingsTableName:
+    Type: String
+  BookingsTableArn:
+    Type: String
+  ConversationsTableName:
+    Type: String
+  ConversationsTableArn:
+    Type: String
+
+Resources:
+  # ========================================
+  # Lambda Execution Role
+  # ========================================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-LambdaExecutionRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !Ref TenantsTableArn
+                  - !Ref ApiKeysTableArn
+                  - !Ref ServicesTableArn
+                  - !Ref ProvidersTableArn
+                  - !Ref AvailabilityTableArn
+                  - !Ref BookingsTableArn
+                  - !Ref ConversationsTableArn
+                  - !Sub '${TenantsTableArn}/index/*'
+                  - !Sub '${ApiKeysTableArn}/index/*'
+                  - !Sub '${ServicesTableArn}/index/*'
+                  - !Sub '${ProvidersTableArn}/index/*'
+                  - !Sub '${BookingsTableArn}/index/*'
+                  - !Sub '${ConversationsTableArn}/index/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-LambdaExecutionRole'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # Lambda Layer (Shared Code)
+  # ========================================
+  SharedLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub '${ProjectName}-${Environment}-SharedLayer'
+      Description: Shared domain entities, repositories, and utilities
+      Content:
+        S3Bucket: !Ref BackendCodeBucket
+        S3Key: layers/shared-layer.zip
+      CompatibleRuntimes:
+        - python3.11
+        - python3.12
+
+  # ========================================
+  # Lambda: Auth Resolver
+  # ========================================
+  AuthResolverFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-AuthResolver'
+      Description: AppSync authorizer - validates API keys and returns tenant context
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref BackendCodeBucket
+        S3Key: functions/auth_resolver.zip
+      Layers:
+        - !Ref SharedLayer
+      Environment:
+        Variables:
+          TENANTS_TABLE: !Ref TenantsTableName
+          API_KEYS_TABLE: !Ref ApiKeysTableName
+          LOG_LEVEL: INFO
+          ENVIRONMENT: !Ref Environment
+      Timeout: 10
+      MemorySize: 256
+      TracingConfig:
+        Mode: Active
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-AuthResolver'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  AuthResolverLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AuthResolverFunction}'
+      RetentionInDays: 7
+
+  # ========================================
+  # Lambda: Catalog
+  # ========================================
+  CatalogFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-Catalog'
+      Description: Service and provider catalog management
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref BackendCodeBucket
+        S3Key: functions/catalog.zip
+      Layers:
+        - !Ref SharedLayer
+      Environment:
+        Variables:
+          SERVICES_TABLE: !Ref ServicesTableName
+          PROVIDERS_TABLE: !Ref ProvidersTableName
+          LOG_LEVEL: INFO
+          ENVIRONMENT: !Ref Environment
+      Timeout: 30
+      MemorySize: 512
+      TracingConfig:
+        Mode: Active
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-Catalog'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  CatalogLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${CatalogFunction}'
+      RetentionInDays: 7
+
+  # ========================================
+  # Lambda: Availability
+  # ========================================
+  AvailabilityFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-Availability'
+      Description: Calculate available time slots for bookings
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref BackendCodeBucket
+        S3Key: functions/availability.zip
+      Layers:
+        - !Ref SharedLayer
+      Environment:
+        Variables:
+          AVAILABILITY_TABLE: !Ref AvailabilityTableName
+          BOOKINGS_TABLE: !Ref BookingsTableName
+          SERVICES_TABLE: !Ref ServicesTableName
+          PROVIDERS_TABLE: !Ref ProvidersTableName
+          SLOT_INTERVAL_MINUTES: '15'
+          LOG_LEVEL: INFO
+          ENVIRONMENT: !Ref Environment
+      Timeout: 30
+      MemorySize: 512
+      TracingConfig:
+        Mode: Active
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-Availability'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  AvailabilityLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AvailabilityFunction}'
+      RetentionInDays: 7
+
+  # ========================================
+  # Lambda: Booking
+  # ========================================
+  BookingFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-Booking'
+      Description: Booking creation, confirmation, and cancellation
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref BackendCodeBucket
+        S3Key: functions/booking.zip
+      Layers:
+        - !Ref SharedLayer
+      Environment:
+        Variables:
+          BOOKINGS_TABLE: !Ref BookingsTableName
+          SERVICES_TABLE: !Ref ServicesTableName
+          PROVIDERS_TABLE: !Ref ProvidersTableName
+          TENANTS_TABLE: !Ref TenantsTableName
+          CONVERSATIONS_TABLE: !Ref ConversationsTableName
+          LOG_LEVEL: INFO
+          ENVIRONMENT: !Ref Environment
+      Timeout: 60
+      MemorySize: 512
+      TracingConfig:
+        Mode: Active
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-Booking'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  BookingLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${BookingFunction}'
+      RetentionInDays: 7
+
+  # ========================================
+  # Lambda: Chat Agent
+  # ========================================
+  ChatAgentFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-ChatAgent'
+      Description: Conversational AI agent with FSM for booking flow
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref BackendCodeBucket
+        S3Key: functions/chat_agent.zip
+      Layers:
+        - !Ref SharedLayer
+      Environment:
+        Variables:
+          CONVERSATIONS_TABLE: !Ref ConversationsTableName
+          SERVICES_TABLE: !Ref ServicesTableName
+          PROVIDERS_TABLE: !Ref ProvidersTableName
+          AVAILABILITY_TABLE: !Ref AvailabilityTableName
+          BOOKINGS_TABLE: !Ref BookingsTableName
+          LOG_LEVEL: INFO
+          ENVIRONMENT: !Ref Environment
+      Timeout: 60
+      MemorySize: 1024
+      TracingConfig:
+        Mode: Active
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ChatAgent'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  ChatAgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ChatAgentFunction}'
+      RetentionInDays: 7
+
+  # ========================================
+  # CloudWatch Alarms
+  # ========================================
+  AuthResolverErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-AuthResolver-Errors'
+      AlarmDescription: Auth Resolver Lambda errors exceed threshold
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AuthResolverFunction
+      TreatMissingData: notBreaching
+
+  BookingErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-Booking-Errors'
+      AlarmDescription: Booking Lambda errors exceed threshold
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BookingFunction
+      TreatMissingData: notBreaching
+
+  ChatAgentErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-ChatAgent-Errors'
+      AlarmDescription: Chat Agent Lambda errors exceed threshold
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ChatAgentFunction
+      TreatMissingData: notBreaching
+
+Outputs:
+  AuthResolverFunctionArn:
+    Description: Auth Resolver Lambda ARN
+    Value: !GetAtt AuthResolverFunction.Arn
+
+  AuthResolverFunctionName:
+    Description: Auth Resolver Lambda Name
+    Value: !Ref AuthResolverFunction
+
+  CatalogFunctionArn:
+    Description: Catalog Lambda ARN
+    Value: !GetAtt CatalogFunction.Arn
+
+  CatalogFunctionName:
+    Description: Catalog Lambda Name
+    Value: !Ref CatalogFunction
+
+  AvailabilityFunctionArn:
+    Description: Availability Lambda ARN
+    Value: !GetAtt AvailabilityFunction.Arn
+
+  AvailabilityFunctionName:
+    Description: Availability Lambda Name
+    Value: !Ref AvailabilityFunction
+
+  BookingFunctionArn:
+    Description: Booking Lambda ARN
+    Value: !GetAtt BookingFunction.Arn
+
+  BookingFunctionName:
+    Description: Booking Lambda Name
+    Value: !Ref BookingFunction
+
+  ChatAgentFunctionArn:
+    Description: Chat Agent Lambda ARN
+    Value: !GetAtt ChatAgentFunction.Arn
+
+  ChatAgentFunctionName:
+    Description: Chat Agent Lambda Name
+    Value: !Ref ChatAgentFunction
+
+  SharedLayerArn:
+    Description: Shared Lambda Layer ARN
+    Value: !Ref SharedLayer

@@ -1,0 +1,33 @@
+# CloudFormation Build and Deployment Files
+dist/
+*.zip
+
+# Environment-specific parameters (contain sensitive data)
+parameters-dev.json
+parameters-qa.json
+parameters-prod.json
+
+# Generated schema file
+schema.graphql
+
+# AWS SAM
+.aws-sam/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+tmp/
+temp/

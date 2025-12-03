@@ -1,0 +1,378 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Chat Booking SaaS - Database Stack (DynamoDB Tables)'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Description: Project name
+
+Resources:
+  # ========================================
+  # Table 1: Tenants
+  # ========================================
+  TenantsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-Tenants'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenantId
+          AttributeType: S
+        - AttributeName: slug
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenantId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: slug-index
+          KeySchema:
+            - AttributeName: slug
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-Tenants'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # Table 2: API Keys
+  # ========================================
+  ApiKeysTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-ApiKeys'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: apiKeyHash
+          AttributeType: S
+        - AttributeName: tenantId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: apiKeyHash
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: tenantId-index
+          KeySchema:
+            - AttributeName: tenantId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ApiKeys'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # Table 3: Services
+  # ========================================
+  ServicesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-Services'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenantId
+          AttributeType: S
+        - AttributeName: serviceId
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenantId
+          KeyType: HASH
+        - AttributeName: serviceId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: category-index
+          KeySchema:
+            - AttributeName: tenantId
+              KeyType: HASH
+            - AttributeName: category
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-Services'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # Table 4: Providers
+  # ========================================
+  ProvidersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-Providers'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenantId
+          AttributeType: S
+        - AttributeName: providerId
+          AttributeType: S
+        - AttributeName: serviceIds
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenantId
+          KeyType: HASH
+        - AttributeName: providerId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: serviceId-index
+          KeySchema:
+            - AttributeName: tenantId
+              KeyType: HASH
+            - AttributeName: serviceIds
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-Providers'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # Table 5: Provider Availability
+  # ========================================
+  AvailabilityTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-ProviderAvailability'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenantId_providerId
+          AttributeType: S
+        - AttributeName: dayOfWeek
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenantId_providerId
+          KeyType: HASH
+        - AttributeName: dayOfWeek
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ProviderAvailability'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # Table 6: Bookings
+  # ========================================
+  BookingsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-Bookings'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenantId
+          AttributeType: S
+        - AttributeName: bookingId
+          AttributeType: S
+        - AttributeName: tenantId_providerId
+          AttributeType: S
+        - AttributeName: start
+          AttributeType: S
+        - AttributeName: clientEmail
+          AttributeType: S
+        - AttributeName: conversationId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenantId
+          KeyType: HASH
+        - AttributeName: bookingId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: providerId-start-index
+          KeySchema:
+            - AttributeName: tenantId_providerId
+              KeyType: HASH
+            - AttributeName: start
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: clientEmail-index
+          KeySchema:
+            - AttributeName: tenantId
+              KeyType: HASH
+            - AttributeName: clientEmail
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: conversationId-index
+          KeySchema:
+            - AttributeName: tenantId
+              KeyType: HASH
+            - AttributeName: conversationId
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-Bookings'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ========================================
+  # Table 7: Conversations
+  # ========================================
+  ConversationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-Conversations'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenantId
+          AttributeType: S
+        - AttributeName: conversationId
+          AttributeType: S
+        - AttributeName: state
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenantId
+          KeyType: HASH
+        - AttributeName: conversationId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: state-index
+          KeySchema:
+            - AttributeName: tenantId
+              KeyType: HASH
+            - AttributeName: state
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-Conversations'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+Outputs:
+  TenantsTableName:
+    Description: Tenants table name
+    Value: !Ref TenantsTable
+
+  TenantsTableArn:
+    Description: Tenants table ARN
+    Value: !GetAtt TenantsTable.Arn
+
+  ApiKeysTableName:
+    Description: API Keys table name
+    Value: !Ref ApiKeysTable
+
+  ApiKeysTableArn:
+    Description: API Keys table ARN
+    Value: !GetAtt ApiKeysTable.Arn
+
+  ServicesTableName:
+    Description: Services table name
+    Value: !Ref ServicesTable
+
+  ServicesTableArn:
+    Description: Services table ARN
+    Value: !GetAtt ServicesTable.Arn
+
+  ProvidersTableName:
+    Description: Providers table name
+    Value: !Ref ProvidersTable
+
+  ProvidersTableArn:
+    Description: Providers table ARN
+    Value: !GetAtt ProvidersTable.Arn
+
+  AvailabilityTableName:
+    Description: Provider Availability table name
+    Value: !Ref AvailabilityTable
+
+  AvailabilityTableArn:
+    Description: Provider Availability table ARN
+    Value: !GetAtt AvailabilityTable.Arn
+
+  BookingsTableName:
+    Description: Bookings table name
+    Value: !Ref BookingsTable
+
+  BookingsTableArn:
+    Description: Bookings table ARN
+    Value: !GetAtt BookingsTable.Arn
+
+  BookingsTableStreamArn:
+    Description: Bookings table stream ARN
+    Value: !GetAtt BookingsTable.StreamArn
+
+  ConversationsTableName:
+    Description: Conversations table name
+    Value: !Ref ConversationsTable
+
+  ConversationsTableArn:
+    Description: Conversations table ARN
+    Value: !GetAtt ConversationsTable.Arn
