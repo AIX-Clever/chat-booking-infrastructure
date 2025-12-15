@@ -23,8 +23,8 @@ import { AuthStack } from '../lib/auth-stack';
 
 const app = new cdk.App();
 
-// Get environment from context
-const env = app.node.tryGetContext('env') || 'dev';
+// Get environment from context or env var
+const env = app.node.tryGetContext('env') || process.env.ENV || 'dev';
 const account = app.node.tryGetContext('account') || process.env.CDK_DEFAULT_ACCOUNT;
 const region = app.node.tryGetContext('region') || process.env.CDK_DEFAULT_REGION || 'us-east-1';
 
