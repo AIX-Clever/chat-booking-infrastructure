@@ -73,6 +73,12 @@ const appSyncApiStack = new AppSyncApiStack(app, `${stackPrefix}-AppSyncApi`, {
 });
 appSyncApiStack.addDependency(lambdaStack);
 
+import { FrontendStack } from '../lib/frontend-stack';
+
+// ... (existing imports)
+
+// ... (existing code)
+
 // 4. Auth Stack - Cognito for Admin Panel
 const authStack = new AuthStack(app, `${stackPrefix}-Auth`, {
   env: { account, region },
@@ -81,6 +87,14 @@ const authStack = new AuthStack(app, `${stackPrefix}-Auth`, {
 });
 // Auth stack is independent
 
+// 5. Frontend Stack - Onboarding App
+const frontendStack = new FrontendStack(app, `${stackPrefix}-Frontend`, {
+  env: { account, region },
+  description: 'S3 + CloudFront for Chat Booking Onboarding',
+  tags,
+  stage: env,
+});
+
 // Add stack outputs summary
 new cdk.CfnOutput(appSyncApiStack, 'DeploymentSummary', {
   value: JSON.stringify({
@@ -88,6 +102,7 @@ new cdk.CfnOutput(appSyncApiStack, 'DeploymentSummary', {
     region,
     graphqlEndpoint: appSyncApiStack.api.graphqlUrl,
     userPoolId: authStack.userPool.userPoolId,
+    onboardingUrl: frontendStack.distribution.distributionDomainName,
   }),
   description: 'Deployment summary',
 });

@@ -47,7 +47,7 @@ export class AppSyncApiStack extends cdk.Stack {
         },
         additionalAuthorizationModes: [
           {
-            authorizationType: appsync.AuthorizationType.AWS_LAMBDA,
+            authorizationType: appsync.AuthorizationType.LAMBDA,
             lambdaAuthorizerConfig: {
               handler: props.authResolverFunction,
               resultsCacheTtl: cdk.Duration.minutes(5),

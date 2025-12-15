@@ -58,8 +58,9 @@ export class LambdaStack extends cdk.Stack {
     };
 
     // Lambda Layer for shared code
+    // Lambda Layer for shared code
     const sharedLayer = new lambda.LayerVersion(this, 'SharedLayer', {
-      code: lambda.Code.fromAsset(path.join(backendPath, 'shared')),
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../../chat-booking-layers/layer')),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_9],
       description: 'Shared domain entities, repositories, and utilities',
     });
