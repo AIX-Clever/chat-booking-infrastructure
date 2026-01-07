@@ -29,6 +29,11 @@ enum ConversationState {
   BOOKING_CONFIRMED
 }
 
+enum LocationType {
+  ONLINE
+  PHYSICAL
+}
+
 # Types - Catalog
 type Service {
   serviceId: ID!
@@ -38,6 +43,8 @@ type Service {
   durationMinutes: Int!
   price: Float
   available: Boolean!
+  requiredRoomIds: [ID]
+  locationType: [LocationType]
 }
 
 type Provider {
@@ -78,6 +85,7 @@ type Booking {
   providerId: ID!
   start: AWSDateTime!
   end: AWSDateTime!
+  roomId: ID
   status: BookingStatus!
   clientName: String!
   clientEmail: String!
@@ -122,6 +130,8 @@ input CreateServiceInput {
   category: String!
   durationMinutes: Int!
   price: Float
+  requiredRoomIds: [ID]
+  locationType: [LocationType]
 }
 
 input UpdateServiceInput {
@@ -132,6 +142,8 @@ input UpdateServiceInput {
   durationMinutes: Int
   price: Float
   available: Boolean
+  requiredRoomIds: [ID]
+  locationType: [LocationType]
 }
 
 input CreateProviderInput {
