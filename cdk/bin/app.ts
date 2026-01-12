@@ -105,6 +105,16 @@ const widgetStack = new EmbeddedWidgetStack(app, `${stackPrefix}-EmbeddedWidget`
   stage: env,
 });
 
+import { AssetsStack } from '../lib/assets-stack';
+
+// 7. Assets Stack (Images)
+const assetsStack = new AssetsStack(app, `${stackPrefix}-Assets`, {
+  env: { account, region },
+  description: 'S3 + CloudFront + Lambda for Asset Optimization',
+  tags,
+  stage: env,
+});
+
 // Add stack outputs summary
 new cdk.CfnOutput(appSyncApiStack, 'DeploymentSummary', {
   value: JSON.stringify({
