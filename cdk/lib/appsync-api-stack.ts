@@ -169,6 +169,8 @@ type Provider {
   bio: String
   serviceIds: [ID!]!
   timezone: String!
+  photoUrl: String
+  photoUrlThumbnail: String
   available: Boolean!
 }
 
@@ -398,6 +400,9 @@ type Mutation {
   startConversation(input: StartConversationInput!): ChatResponse!
   sendMessage(input: SendMessageInput!): ChatResponse!
   confirmBookingFromConversation(input: ConfirmBookingFromConversationInput!): ChatResponse!
+  
+  # Assets
+  generatePresignedUrl(fileName: String!, contentType: String!): String!
 }
 
 schema {
@@ -500,7 +505,12 @@ schema {
 
     catalogDataSource.createResolver('DeleteProviderResolver', {
       typeName: 'Mutation',
-      fieldName: 'deleteProvider',
+      responseMappingTemplate: responseTemplate,
+    });
+
+    catalogDataSource.createResolver('GeneratePresignedUrlResolver', {
+      typeName: 'Mutation',
+      fieldName: 'generatePresignedUrl',
       requestMappingTemplate: requestTemplate,
       responseMappingTemplate: responseTemplate,
     });
