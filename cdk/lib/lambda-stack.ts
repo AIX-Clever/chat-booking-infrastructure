@@ -156,6 +156,13 @@ export class LambdaStack extends cdk.Stack {
     props.availabilityTable.grantReadData(this.chatAgentFunction);
     props.bookingsTable.grantReadWriteData(this.chatAgentFunction);
 
+    // Grant SES permissions to Booking Lambda
+    this.bookingFunction.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+      effect: cdk.aws_iam.Effect.ALLOW,
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: ['*'], // Ideally restrict to verified identities, but * is okay for now
+    }));
+
     // CloudWatch alarms for critical functions
     this.createAlarms();
 
