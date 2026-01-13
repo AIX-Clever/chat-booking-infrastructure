@@ -28,9 +28,11 @@ export class AssetsStack extends cdk.Stack {
             removalPolicy: props.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
             autoDeleteObjects: props.stage !== 'prod',
             cors: [{
-                allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.POST, s3.HttpMethods.GET],
+                allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.POST, s3.HttpMethods.GET, s3.HttpMethods.HEAD],
                 allowedOrigins: ['*'], // Restrict this in production to admin domain
                 allowedHeaders: ['*'],
+                exposedHeaders: ['ETag', 'x-amz-server-side-encryption', 'x-amz-request-id', 'x-amz-id-2'],
+                maxAge: 3000,
             }]
         });
 
