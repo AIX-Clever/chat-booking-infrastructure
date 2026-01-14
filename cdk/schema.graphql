@@ -280,6 +280,20 @@ type Mutation {
   
   # Assets
   generatePresignedUrl(fileName: String!, contentType: String!): String!
+
+  # Availability Exceptions
+  setProviderExceptions(providerId: ID!, exceptions: [ExceptionRuleInput!]!): [ProviderException!]!
+  getProviderExceptions(providerId: ID!): [ProviderException!]!
+}
+
+type ProviderException {
+  date: String!
+  timeRanges: [TimeRange!]
+}
+
+input ExceptionRuleInput {
+  date: String!
+  timeRanges: [TimeRangeInput!]
 }
 
 schema {
