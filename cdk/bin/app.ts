@@ -96,16 +96,6 @@ const frontendStack = new FrontendStack(app, `${stackPrefix}-Frontend`, {
 });
 
 
-import { EmbeddedWidgetStack } from '../lib/embedded-widget-stack';
-
-// 6. Embedded Widget Stack  
-const widgetStack = new EmbeddedWidgetStack(app, `${stackPrefix}-EmbeddedWidget`, {
-  env: { account, region },
-  description: 'S3 + CloudFront for Embedded Booking Widget',
-  tags,
-  stage: env,
-});
-
 import { AssetsStack } from '../lib/assets-stack';
 
 // 7. Assets Stack (Images)
@@ -124,7 +114,6 @@ new cdk.CfnOutput(appSyncApiStack, 'DeploymentSummary', {
     graphqlEndpoint: appSyncApiStack.api.graphqlUrl,
     userPoolId: authStack.userPool.userPoolId,
     onboardingUrl: frontendStack.distribution.distributionDomainName,
-    widgetUrl: widgetStack.distribution.distributionDomainName,
   }),
   description: 'Deployment summary',
 });
