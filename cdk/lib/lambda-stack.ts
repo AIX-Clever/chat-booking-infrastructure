@@ -54,6 +54,7 @@ export class LambdaStack extends cdk.Stack {
         BOOKINGS_TABLE: props.bookingsTable.tableName,
         CONVERSATIONS_TABLE: props.conversationsTable.tableName,
         LOG_LEVEL: 'INFO',
+        SES_SENDER_EMAIL: 'mazinversiones@gmail.com',
       },
     };
 

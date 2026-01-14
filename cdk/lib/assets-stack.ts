@@ -60,6 +60,7 @@ export class AssetsStack extends cdk.Stack {
             runtime: lambda.Runtime.PYTHON_3_9,
             handler: 'handler.lambda_handler',
             code: lambda.Code.fromAsset(path.join(__dirname, '../../../chat-booking-backend/assets/optimization'), {
+                /*
                 bundling: {
                     image: lambda.Runtime.PYTHON_3_9.bundlingImage,
                     command: [
@@ -67,6 +68,7 @@ export class AssetsStack extends cdk.Stack {
                         'pip install -t /asset-output Pillow && cp -au . /asset-output'
                     ],
                 },
+                */
             }),
             timeout: cdk.Duration.seconds(30),
             memorySize: 1024, // Pillow needs memory

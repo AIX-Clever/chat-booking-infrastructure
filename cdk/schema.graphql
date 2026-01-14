@@ -29,11 +29,6 @@ enum ConversationState {
   BOOKING_CONFIRMED
 }
 
-enum LocationType {
-  ONLINE
-  PHYSICAL
-}
-
 # Types - Catalog
 type Service {
   serviceId: ID!
@@ -43,8 +38,6 @@ type Service {
   durationMinutes: Int!
   price: Float
   available: Boolean!
-  requiredRoomIds: [ID]
-  locationType: [LocationType]
 }
 
 type Provider {
@@ -53,6 +46,8 @@ type Provider {
   bio: String
   serviceIds: [ID!]!
   timezone: String!
+  photoUrl: String
+  photoUrlThumbnail: String
   available: Boolean!
 }
 
@@ -85,7 +80,6 @@ type Booking {
   providerId: ID!
   start: AWSDateTime!
   end: AWSDateTime!
-  roomId: ID
   status: BookingStatus!
   clientName: String!
   clientEmail: String!
@@ -130,8 +124,6 @@ input CreateServiceInput {
   category: String!
   durationMinutes: Int!
   price: Float
-  requiredRoomIds: [ID]
-  locationType: [LocationType]
 }
 
 input UpdateServiceInput {
@@ -142,8 +134,6 @@ input UpdateServiceInput {
   durationMinutes: Int
   price: Float
   available: Boolean
-  requiredRoomIds: [ID]
-  locationType: [LocationType]
 }
 
 input CreateProviderInput {
@@ -287,6 +277,9 @@ type Mutation {
   startConversation(input: StartConversationInput!): ChatResponse!
   sendMessage(input: SendMessageInput!): ChatResponse!
   confirmBookingFromConversation(input: ConfirmBookingFromConversationInput!): ChatResponse!
+  
+  # Assets
+  generatePresignedUrl(fileName: String!, contentType: String!): String!
 }
 
 schema {
