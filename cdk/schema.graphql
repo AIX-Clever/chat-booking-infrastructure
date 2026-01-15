@@ -70,6 +70,7 @@ type ProviderAvailability {
   dayOfWeek: String!
   timeRanges: [TimeRange!]!
   breaks: [TimeRange!]
+  exceptions: [ProviderException!]
 }
 
 # Types - Bookings
