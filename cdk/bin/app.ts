@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
-import { DatabaseStack } from '../lib/database-stack';
-import { LambdaStack } from '../lib/lambda-stack';
-import { AppSyncApiStack } from '../lib/appsync-api-stack';
-import { AuthStack } from '../lib/auth-stack';
+// Imports updated
+import { FrontendStack } from '../lib/frontend-stack';
 
 /**
  * CDK App Entry Point
@@ -32,60 +30,13 @@ const region = app.node.tryGetContext('region') || process.env.CDK_DEFAULT_REGIO
 const tags = {
   Project: 'ChatBooking',
   Environment: env,
-  ManagedBy: 'CDK',
+  ManagedBy: 'CDK-Infrastructure',
 };
 
 // Stack naming convention
 const stackPrefix = `ChatBooking-${env}`;
 
-// 1. Database Stack - Foundation
-const databaseStack = new DatabaseStack(app, `${stackPrefix}-Database`, {
-  env: { account, region },
-  description: 'DynamoDB tables for Chat Booking SaaS',
-  tags,
-});
-
-// 2. Lambda Stack - Business Logic
-const lambdaStack = new LambdaStack(app, `${stackPrefix}-Lambda`, {
-  env: { account, region },
-  description: 'Lambda functions for Chat Booking SaaS',
-  tags,
-  tenantsTable: databaseStack.tenantsTable,
-  apiKeysTable: databaseStack.apiKeysTable,
-  servicesTable: databaseStack.servicesTable,
-  providersTable: databaseStack.providersTable,
-  availabilityTable: databaseStack.availabilityTable,
-  bookingsTable: databaseStack.bookingsTable,
-  conversationsTable: databaseStack.conversationsTable,
-});
-lambdaStack.addDependency(databaseStack);
-
-// 3. AppSync API Stack - GraphQL Gateway
-const appSyncApiStack = new AppSyncApiStack(app, `${stackPrefix}-AppSyncApi`, {
-  env: { account, region },
-  description: 'GraphQL API for Chat Booking SaaS',
-  tags,
-  authResolverFunction: lambdaStack.authResolverFunction,
-  catalogFunction: lambdaStack.catalogFunction,
-  availabilityFunction: lambdaStack.availabilityFunction,
-  bookingFunction: lambdaStack.bookingFunction,
-  chatAgentFunction: lambdaStack.chatAgentFunction,
-});
-appSyncApiStack.addDependency(lambdaStack);
-
 import { FrontendStack } from '../lib/frontend-stack';
-
-// ... (existing imports)
-
-// ... (existing code)
-
-// 4. Auth Stack - Cognito for Admin Panel
-const authStack = new AuthStack(app, `${stackPrefix}-Auth`, {
-  env: { account, region },
-  description: 'Cognito User Pool for Chat Booking Admin',
-  tags,
-});
-// Auth stack is independent
 
 // 5. Frontend Stack - Onboarding App
 const frontendStack = new FrontendStack(app, `${stackPrefix}-Frontend`, {
@@ -95,24 +46,11 @@ const frontendStack = new FrontendStack(app, `${stackPrefix}-Frontend`, {
   stage: env,
 });
 
-
-import { AssetsStack } from '../lib/assets-stack';
-
-// 7. Assets Stack (Images)
-const assetsStack = new AssetsStack(app, `${stackPrefix}-Assets`, {
-  env: { account, region },
-  description: 'S3 + CloudFront + Lambda for Asset Optimization',
-  tags,
-  stage: env,
-});
-
 // Add stack outputs summary
-new cdk.CfnOutput(appSyncApiStack, 'DeploymentSummary', {
+new cdk.CfnOutput(app, 'DeploymentSummary', {
   value: JSON.stringify({
     environment: env,
     region,
-    graphqlEndpoint: appSyncApiStack.api.graphqlUrl,
-    userPoolId: authStack.userPool.userPoolId,
     onboardingUrl: frontendStack.distribution.distributionDomainName,
   }),
   description: 'Deployment summary',
